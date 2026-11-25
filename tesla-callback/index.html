@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Tesla sign-in return — Valkyrie Jarvis</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>body{font-family:system-ui,sans-serif;max-width:640px;margin:40px auto;padding:0 16px}code{display:block;background:#111;color:#0f0;padding:16px;border-radius:8px;word-break:break-all;font-size:18px}button{font-size:17px;padding:10px 18px;margin-top:12px}</style>
+</head>
+<body>
+<h1>Tesla sign-in almost done</h1>
+<p>Copy the code below and send it to Jarvis in your Muse chat. It is a one-time sign-in code for your own app — it only works once and expires quickly.</p>
+<code id="code">(no code found in this link)</code>
+<button onclick="navigator.clipboard.writeText(document.getElementById('code').textContent)">Copy code</button>
+<script>
+var c = new URLSearchParams(location.search).get('code');
+if (c) document.getElementById('code').textContent = c;
+</script>
+</body>
+</html>
