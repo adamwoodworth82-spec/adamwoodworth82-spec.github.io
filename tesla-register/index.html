@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Valkyrie Jarvis — Tesla Register Tool</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; padding: 20px; background: #111; color: #f2f2f2; line-height: 1.5; }
+  main { max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 1.4rem; }
+  label { display: block; margin-top: 18px; font-weight: 600; }
+  input { width: 100%; box-sizing: border-box; padding: 12px; font-size: 1rem; margin-top: 6px; border-radius: 8px; border: 1px solid #555; background: #1c1c1c; color: #fff; }
+  button { width: 100%; padding: 14px; font-size: 1.1rem; margin-top: 22px; border: 0; border-radius: 8px; background: #e82127; color: #fff; font-weight: 700; }
+  button:disabled { background: #555; }
+  .step { padding: 10px 12px; border: 1px solid #333; border-radius: 8px; margin-top: 10px; background: #181818; }
+  .ok { border-color: #2e7d32; }
+  .bad { border-color: #c62828; }
+  .small { color: #bbb; font-size: 0.9rem; }
+  code { word-break: break-all; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Valkyrie Jarvis — Register with Tesla</h1>
+  <p>This page does one job: it registers your Tesla developer app
+  (&quot;Valkyrie Jarvis&quot;) with Tesla&apos;s Fleet API for North America,
+  the step Tesla calls <b>partner registration</b>.</p>
+  <p>How it works, in plain terms:</p>
+  <ol>
+    <li>You paste your app&apos;s <b>Client Secret</b> below. It stays in this page on your phone.</li>
+    <li>When you tap the button, this page sends the secret <b>only</b> to Tesla&apos;s sign-in
+    address (<code>fleet-auth.prd.vn.cloud.tesla.com</code>) to get a short-lived partner token.</li>
+    <li>The page then uses that token for one register call to Tesla
+    (<code>fleet-api.prd.na.vn.cloud.tesla.com</code>) for the domain
+    <code>adamwoodworth82-spec.github.io</code>, and checks the registration by reading your public key back.</li>
+  </ol>
+  <p class="small">Nothing is saved: no cookies, no storage, nothing is sent anywhere except
+  the two Tesla addresses above. The secret box is cleared as soon as the call starts, and the
+  token is never shown or stored. You can read this page&apos;s source to check — it is one file,
+  with no outside scripts.</p>
+
+  <label for="clientId">Client ID</label>
+  <input id="clientId" type="text" autocomplete="off" spellcheck="false"
+         value="0382250d-d12d-4e5f-a1af-bc3b8078b8cb">
+
+  <label for="clientSecret">Client Secret (from Tesla portal → Valkyrie Jarvis → Credentials &amp; APIs)</label>
+  <input id="clientSecret" type="password" autocomplete="off" spellcheck="false"
+         placeholder="Paste the client secret here">
+
+  <button id="go" type="button">Register my app with Tesla</button>
+
+  <div id="log" aria-live="polite"></div>
+
+  <script>
+    "use strict";
+    var AUTH_URL = "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token";
+    var API_BASE = "https://fleet-api.prd.na.vn.cloud.tesla.com";
+    var DOMAIN = "adamwoodworth82-spec.github.io";
+
+    function logStep(text) {
+      var div = document.createElement("div");
+      div.className = "step";
+      div.textContent = text;
+      document.getElementById("log").appendChild(div);
+      return div;
+    }
+
+    async function run() {
+      var btn = document.getElementById("go");
+      var idEl = document.getElementById("clientId");
+      var secretEl = document.getElementById("clientSecret");
+      var clientId = idEl.value.trim();
+      var clientSecret = secretEl.value.trim();
+      // Clear the secret from the page right away. It is only used in the
+      // token request below, held in this local variable, nowhere else.
+      secretEl.value = "";
+      if (!clientId || !clientSecret) {
+        logStep("Please fill in both the Client ID and the Client Secret first.").className += " bad";
+        return;
+      }
+      btn.disabled = true;
+
+      var step1 = logStep("Step 1 of 3: Asking Tesla for a partner token…");
+      var token;
+      try {
+        var form = new URLSearchParams();
+        form.set("grant_type", "client_credentials");
+        form.set("client_id", clientId);
+        form.set("client_secret", clientSecret);
+        form.set("audience", API_BASE);
+        form.set("scope", "openid vehicle_device_data vehicle_cmds vehicle_charging_cmds");
+        clientSecret = null;
+        var resp = await fetch(AUTH_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: form.toString()
+        });
+        var data = await resp.json().catch(function () { return {}; });
+        if (!resp.ok || !data.access_token) {
+          step1.textContent = "Step 1 did not work. Tesla answered " + resp.status +
+            ": " + (data.error_description || data.error || "no details given") +
+            " — tell Jarvis this exact wording.";
+          step1.className += " bad";
+          btn.disabled = false;
+          return;
+        }
+        token = data.access_token;
+        step1.textContent = "Step 1 done: partner token received from Tesla.";
+        step1.className += " ok";
+      } catch (e) {
+        step1.textContent = "Step 1 could not reach Tesla from the browser (" + e.message +
+          "). This usually means the browser blocked the call. Tell Jarvis it failed at Step 1 with this message.";
+        step1.className += " bad";
+        btn.disabled = false;
+        return;
+      }
+
+      var step2 = logStep("Step 2 of 3: Registering " + DOMAIN + " with Tesla…");
+      try {
+        var resp2 = await fetch(API_BASE + "/api/1/partner_accounts", {
+          method: "POST",
+          headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+          body: JSON.stringify({ domain: DOMAIN })
+        });
+        var data2 = await resp2.json().catch(function () { return {}; });
+        if (!resp2.ok) {
+          step2.textContent = "Step 2 did not work. Tesla answered " + resp2.status +
+            ": " + JSON.stringify(data2) + " — tell Jarvis this exact wording.";
+          step2.className += " bad";
+          btn.disabled = false;
+          return;
+        }
+        step2.textContent = "Step 2 done: Tesla accepted the registration.";
+        step2.className += " ok";
+      } catch (e) {
+        step2.textContent = "Step 2 could not reach Tesla from the browser (" + e.message +
+          "). Tell Jarvis it failed at Step 2 with this message.";
+        step2.className += " bad";
+        btn.disabled = false;
+        return;
+      }
+
+      var step3 = logStep("Step 3 of 3: Checking the registration by reading your public key back from Tesla…");
+      try {
+        var resp3 = await fetch(API_BASE + "/api/1/partner_accounts/public_key?domain=" + encodeURIComponent(DOMAIN), {
+          headers: { "Authorization": "Bearer " + token }
+        });
+        var data3 = await resp3.json().catch(function () { return {}; });
+        token = null;
+        if (resp3.ok && data3.response && data3.response.public_key) {
+          step3.textContent = "Step 3 done: Tesla has your public key on file for " + DOMAIN +
+            ". Registration is complete — tell Jarvis it worked.";
+          step3.className += " ok";
+        } else {
+          step3.textContent = "Step 3 check answered " + resp3.status + ": " + JSON.stringify(data3) +
+            " — the register call in Step 2 was accepted, so tell Jarvis this check wording and he will verify from his side.";
+          step3.className += " bad";
+        }
+      } catch (e) {
+        token = null;
+        step3.textContent = "Step 3 check could not run (" + e.message +
+          "). The register call in Step 2 was accepted, so tell Jarvis and he will verify from his side.";
+        step3.className += " bad";
+      }
+      btn.disabled = false;
+    }
+
+    document.getElementById("go").addEventListener("click", run);
+  </script>
+</main>
+</body>
+</html>
