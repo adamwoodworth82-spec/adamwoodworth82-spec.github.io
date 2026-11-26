@@ -10,35 +10,44 @@
   main { max-width: 640px; margin: 0 auto; }
   h1 { font-size: 1.4rem; }
   label { display: block; margin-top: 18px; font-weight: 600; }
-  input { width: 100%; box-sizing: border-box; padding: 12px; font-size: 1rem; margin-top: 6px; border-radius: 8px; border: 1px solid #555; background: #1c1c1c; color: #fff; }
+  input, textarea { width: 100%; box-sizing: border-box; padding: 12px; font-size: 1rem; margin-top: 6px; border-radius: 8px; border: 1px solid #555; background: #1c1c1c; color: #fff; }
+  textarea { font-size: 0.8rem; }
   button { width: 100%; padding: 14px; font-size: 1.1rem; margin-top: 22px; border: 0; border-radius: 8px; background: #e82127; color: #fff; font-weight: 700; }
+  button.secondary { background: #2e7d32; }
   button:disabled { background: #555; }
   .step { padding: 10px 12px; border: 1px solid #333; border-radius: 8px; margin-top: 10px; background: #181818; }
   .ok { border-color: #2e7d32; }
   .bad { border-color: #c62828; }
+  .warn { border-color: #c62828; background: #2a1414; }
   .small { color: #bbb; font-size: 0.9rem; }
   code { word-break: break-all; }
+  #handoff { display: none; }
 </style>
 </head>
 <body>
 <main>
   <h1>Valkyrie Jarvis — Register with Tesla</h1>
-  <p>This page does one job: it registers your Tesla developer app
-  (&quot;Valkyrie Jarvis&quot;) with Tesla&apos;s Fleet API for North America,
-  the step Tesla calls <b>partner registration</b>.</p>
+  <p>This page does the first half of registering your Tesla developer app
+  (&quot;Valkyrie Jarvis&quot;) with Tesla&apos;s Fleet API: it gets a short-lived
+  <b>partner token</b> from Tesla. Jarvis then uses that token to run the register
+  call, because Tesla does not allow browser pages to call its API directly
+  (we tested that — the API call from a browser is blocked on Tesla&apos;s side).</p>
   <p>How it works, in plain terms:</p>
   <ol>
     <li>You paste your app&apos;s <b>Client Secret</b> below. It stays in this page on your phone.</li>
     <li>When you tap the button, this page sends the secret <b>only</b> to Tesla&apos;s sign-in
-    address (<code>fleet-auth.prd.vn.cloud.tesla.com</code>) to get a short-lived partner token.</li>
-    <li>The page then uses that token for one register call to Tesla
-    (<code>fleet-api.prd.na.vn.cloud.tesla.com</code>) for the domain
-    <code>adamwoodworth82-spec.github.io</code>, and checks the registration by reading your public key back.</li>
+    address (<code>fleet-auth.prd.vn.cloud.tesla.com</code>) to get the partner token.</li>
+    <li>The page then shows you the token with a Copy button. You paste that token into the
+    secure entry Jarvis sent you in chat — never into chat itself — and Jarvis runs the
+    register call right away.</li>
   </ol>
-  <p class="small">Nothing is saved: no cookies, no storage, nothing is sent anywhere except
-  the two Tesla addresses above. The secret box is cleared as soon as the call starts, and the
-  token is never shown or stored. You can read this page&apos;s source to check — it is one file,
-  with no outside scripts.</p>
+  <p class="small">About the token: it is <b>not</b> your secret. It expires within hours and
+  cannot be used to make new tokens. Still, treat it like a password while it is alive:
+  do not screenshot it, do not send it in chat, only paste it into Jarvis&apos;s secure entry.
+  Nothing on this page is saved: no cookies, no storage, and the only outside address this
+  page talks to is Tesla&apos;s sign-in address above. The secret box is cleared as soon as
+  the call starts. You can read this page&apos;s source to check — it is one file, with no
+  outside scripts.</p>
 
   <label for="clientId">Client ID</label>
   <input id="clientId" type="text" autocomplete="off" spellcheck="false"
@@ -48,15 +57,26 @@
   <input id="clientSecret" type="password" autocomplete="off" spellcheck="false"
          placeholder="Paste the client secret here">
 
-  <button id="go" type="button">Register my app with Tesla</button>
+  <button id="go" type="button">Get my partner token</button>
 
   <div id="log" aria-live="polite"></div>
+
+  <div id="handoff">
+    <div class="step warn">
+      <b>Your partner token is below.</b> Copy it and paste it into the secure entry
+      Jarvis sent you in chat, then tell Jarvis it is in. Do it now — the token
+      expires within hours. Do not screenshot this screen.
+    </div>
+    <label for="tokenBox">Partner token</label>
+    <textarea id="tokenBox" rows="5" readonly></textarea>
+    <button id="copyBtn" type="button" class="secondary">Copy partner token</button>
+    <div id="copyMsg" class="step" style="display:none"></div>
+  </div>
 
   <script>
     "use strict";
     var AUTH_URL = "https://fleet-auth.prd.vn.cloud.tesla.com/oauth2/v3/token";
     var API_BASE = "https://fleet-api.prd.na.vn.cloud.tesla.com";
-    var DOMAIN = "adamwoodworth82-spec.github.io";
 
     function logStep(text) {
       var div = document.createElement("div");
@@ -81,8 +101,7 @@
       }
       btn.disabled = true;
 
-      var step1 = logStep("Step 1 of 3: Asking Tesla for a partner token…");
-      var token;
+      var step1 = logStep("Asking Tesla for a partner token…");
       try {
         var form = new URLSearchParams();
         form.set("grant_type", "client_credentials");
@@ -98,75 +117,42 @@
         });
         var data = await resp.json().catch(function () { return {}; });
         if (!resp.ok || !data.access_token) {
-          step1.textContent = "Step 1 did not work. Tesla answered " + resp.status +
+          step1.textContent = "It did not work. Tesla answered " + resp.status +
             ": " + (data.error_description || data.error || "no details given") +
             " — tell Jarvis this exact wording.";
           step1.className += " bad";
           btn.disabled = false;
           return;
         }
-        token = data.access_token;
-        step1.textContent = "Step 1 done: partner token received from Tesla.";
+        step1.textContent = "Partner token received from Tesla. Now copy it below and paste it into Jarvis's secure entry.";
         step1.className += " ok";
+        document.getElementById("tokenBox").value = data.access_token;
+        document.getElementById("handoff").style.display = "block";
+        document.getElementById("handoff").scrollIntoView();
       } catch (e) {
-        step1.textContent = "Step 1 could not reach Tesla from the browser (" + e.message +
-          "). This usually means the browser blocked the call. Tell Jarvis it failed at Step 1 with this message.";
+        step1.textContent = "Could not reach Tesla from the browser (" + e.message +
+          "). Tell Jarvis it failed at the token step with this message.";
         step1.className += " bad";
         btn.disabled = false;
-        return;
       }
+    }
 
-      var step2 = logStep("Step 2 of 3: Registering " + DOMAIN + " with Tesla…");
+    async function copyToken() {
+      var box = document.getElementById("tokenBox");
+      var msg = document.getElementById("copyMsg");
+      msg.style.display = "block";
       try {
-        var resp2 = await fetch(API_BASE + "/api/1/partner_accounts", {
-          method: "POST",
-          headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
-          body: JSON.stringify({ domain: DOMAIN })
-        });
-        var data2 = await resp2.json().catch(function () { return {}; });
-        if (!resp2.ok) {
-          step2.textContent = "Step 2 did not work. Tesla answered " + resp2.status +
-            ": " + JSON.stringify(data2) + " — tell Jarvis this exact wording.";
-          step2.className += " bad";
-          btn.disabled = false;
-          return;
-        }
-        step2.textContent = "Step 2 done: Tesla accepted the registration.";
-        step2.className += " ok";
+        await navigator.clipboard.writeText(box.value);
+        msg.textContent = "Copied. Now switch to the chat, open Jarvis's secure entry link, and paste it there.";
       } catch (e) {
-        step2.textContent = "Step 2 could not reach Tesla from the browser (" + e.message +
-          "). Tell Jarvis it failed at Step 2 with this message.";
-        step2.className += " bad";
-        btn.disabled = false;
-        return;
+        box.select();
+        msg.textContent = "Copy did not work automatically — the token is now selected, use your phone's Copy action, then paste it into Jarvis's secure entry.";
       }
-
-      var step3 = logStep("Step 3 of 3: Checking the registration by reading your public key back from Tesla…");
-      try {
-        var resp3 = await fetch(API_BASE + "/api/1/partner_accounts/public_key?domain=" + encodeURIComponent(DOMAIN), {
-          headers: { "Authorization": "Bearer " + token }
-        });
-        var data3 = await resp3.json().catch(function () { return {}; });
-        token = null;
-        if (resp3.ok && data3.response && data3.response.public_key) {
-          step3.textContent = "Step 3 done: Tesla has your public key on file for " + DOMAIN +
-            ". Registration is complete — tell Jarvis it worked.";
-          step3.className += " ok";
-        } else {
-          step3.textContent = "Step 3 check answered " + resp3.status + ": " + JSON.stringify(data3) +
-            " — the register call in Step 2 was accepted, so tell Jarvis this check wording and he will verify from his side.";
-          step3.className += " bad";
-        }
-      } catch (e) {
-        token = null;
-        step3.textContent = "Step 3 check could not run (" + e.message +
-          "). The register call in Step 2 was accepted, so tell Jarvis and he will verify from his side.";
-        step3.className += " bad";
-      }
-      btn.disabled = false;
+      msg.className = "step ok";
     }
 
     document.getElementById("go").addEventListener("click", run);
+    document.getElementById("copyBtn").addEventListener("click", copyToken);
   </script>
 </main>
 </body>
